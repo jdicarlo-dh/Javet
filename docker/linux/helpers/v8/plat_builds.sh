@@ -8,30 +8,35 @@ run_platform_builds() {
 		v8_enable_pointer_compression=false v8_static_library=true \
 		symbol_level=0 use_custom_libcxx=false v8_enable_sandbox=false"
 
-	local v8_flg_os="target_os"
-	local v8_flg_cpu="target_cpu"
-	local v8_flg_v8cpu="v8_target_os"
-	local _qt='"'
+	local l_qt='"'
 
-	local plat_release
-	local plat_cpu
-	for target in $(normalize-targets.sh reduced); do
-		plat_release=$(/cmds/v8/arch-build-alias.sh v8_release $target)
-		plat_cpu=$(/cmds/v8/arch-build-alias.sh v8_flg_cpu $target)
+	local target=$(normalize-target.sh normalized)
+	local plat_release=$(/cmds/v8/arch-build-alias.sh v8_release $target)
+	local plat_cpu=$(/cmds/v8/arch-build-alias.sh v8_flg_cpu $target)
 
-		if [ ! $target = "$amd64_normalized" ]; then
-			v8_args="$v8_flg_cpu=${_qt}$plat_cpu${_qt} $v8_flg_v8cpu=${_qt}$plat_cpu${_qt} $v8_args"
-		fi
+	#if [ $target != "$amd64_normalized" ]; then
+	#	v8_args=" target_cpu=${l_qt}$plat_cpu${l_qt} v8_target_cpu=${l_qt}$plat_cpu${l_qt} $v8_args"
+	#fi
 
-		[ "${ANDROID}" = "noandroid" ] ||
-			v8_args="$v8_flg_os=${_qt}android${_qt} $v8_args"
+	local success=false
+	echo "V8_ARGS=$v8_args"
+	python3 tools/dev/v8gen.py ${plat_release}.release -- $v8_args && success=true
+	if [ "$success" = false ]; then
+		echo "v8get.py failed"
+		exit 1
+	fi
 
-		python3 tools/dev/v8gen.py ${plat_release}.release -- $v8_args
-		maybe-verbose.sh ninja -C out.gn/${plat_release}.release v8_monolith ||
-			python3 patch_v8_build.py -p ./
+	success=false
+	echo "v8 first try: ninja -C out.gn/${plat_release}.release"
+	maybe-verbose.sh ninja -C out.gn/${plat_release}.release v8_monolith && success=true
+	if [ "$success" = false ]; then
+		python3 patch_v8_build.py -p ./
+		echo "v8 try after patch: ninja -C out.gn/${plat_release}.release"
 		maybe-verbose.sh ninja -C out.gn/${plat_release}.release v8_monolith
-		rm patch_v8_build.py
-	done
+	fi
+
+	rm patch_v8_build.py
+	ln -rs out.gn/${plat_release}.release out.gn/platform.release
 }
 
 if [ "$1" = "run_platform_builds" ]; then
@@ -44,6 +49,6 @@ else
 		v8/plat_builds.sh run_platform_builds
 			Run build pipeline for each platform specified in
 			the envirionment variable that's read and normalized
-			by the "normalize-targets.sh" script
+			by the "normalize-target.sh" script
 EOF
 fi
